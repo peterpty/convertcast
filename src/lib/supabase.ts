@@ -12,6 +12,16 @@ export const createClientSupabase = () => {
   return createClient<Database>(supabaseUrl, supabaseAnonKey);
 };
 
+// Server-side Supabase client for API routes
+export const createServerSupabase = () => {
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+};
+
 // Admin client for server operations (if needed)
 export const createAdminSupabase = () => {
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
