@@ -766,6 +766,685 @@ GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
+-- =============================================
+-- LIVE STREAMING & VIEWER MANAGEMENT
+-- =============================================
+
+-- Live streams table for real-time streaming
+CREATE TABLE live_streams (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+    streamer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Stream configuration
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    stream_key VARCHAR(100) UNIQUE NOT NULL,
+    mux_stream_id VARCHAR(100),
+    mux_playback_id VARCHAR(100),
+    stream_url TEXT,
+
+    -- Stream status and settings
+    status VARCHAR(20) DEFAULT 'created' CHECK (status IN ('created', 'live', 'ended', 'error')),
+    started_at TIMESTAMPTZ,
+    ended_at TIMESTAMPTZ,
+    max_viewers INTEGER DEFAULT 1000,
+    is_public BOOLEAN DEFAULT true,
+
+    -- Interactive features
+    enable_chat BOOLEAN DEFAULT true,
+    enable_ai_chat BOOLEAN DEFAULT false,
+    enable_registration BOOLEAN DEFAULT true,
+    ai_sales_mode BOOLEAN DEFAULT false,
+
+    -- AI and conversion settings
+    conversion_goals JSONB DEFAULT '[]',
+    ai_model_config JSONB DEFAULT '{}',
+
+    -- Real-time analytics
+    peak_viewers INTEGER DEFAULT 0,
+    total_viewers INTEGER DEFAULT 0,
+    chat_messages_count INTEGER DEFAULT 0,
+    conversion_events INTEGER DEFAULT 0,
+    total_revenue_cents INTEGER DEFAULT 0,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Stream viewers (anonymous and identified)
+CREATE TABLE stream_viewers (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+
+    -- Viewer identification (optional for anonymous viewers)
+    email VARCHAR(255),
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    phone VARCHAR(20),
+
+    -- Session tracking
+    session_id VARCHAR(100) NOT NULL,
+    ip_address INET,
+    user_agent TEXT,
+    referrer_url TEXT,
+
+    -- Viewing behavior
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    left_at TIMESTAMPTZ,
+    duration_seconds INTEGER DEFAULT 0,
+    page_views INTEGER DEFAULT 1,
+
+    -- Conversion and behavioral analysis
+    conversion_score DECIMAL(3,2) DEFAULT 0.0,
+    purchase_intent VARCHAR(20) DEFAULT 'unknown' CHECK (purchase_intent IN ('low', 'medium', 'high', 'unknown')),
+    behavior_signals JSONB DEFAULT '{}',
+
+    -- AI analysis results
+    ai_analysis JSONB DEFAULT '{}',
+    ai_recommendations JSONB DEFAULT '[]',
+
+    -- Geographic and device data
+    country VARCHAR(2),
+    region VARCHAR(100),
+    city VARCHAR(100),
+    device_type VARCHAR(20), -- desktop, mobile, tablet
+    browser VARCHAR(50),
+
+    -- Engagement metrics
+    interactions_count INTEGER DEFAULT 0,
+    chat_messages_sent INTEGER DEFAULT 0,
+    time_to_first_interaction INTEGER, -- seconds
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- AI-POWERED CHAT SYSTEM
+-- =============================================
+
+-- Chat messages with comprehensive AI analysis
+CREATE TABLE stream_chat_messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+    viewer_id UUID REFERENCES stream_viewers(id) ON DELETE CASCADE,
+
+    -- Message content
+    message TEXT NOT NULL,
+    message_type VARCHAR(20) DEFAULT 'text' CHECK (message_type IN ('text', 'emoji', 'system', 'ai_suggestion', 'streamer_response')),
+
+    -- AI analysis results
+    sentiment_score DECIMAL(3,2), -- -1.0 to 1.0
+    purchase_intent_score DECIMAL(3,2), -- 0.0 to 1.0
+    urgency_score DECIMAL(3,2), -- 0.0 to 1.0
+    engagement_score DECIMAL(3,2), -- 0.0 to 1.0
+
+    -- AI-detected entities and topics
+    detected_entities JSONB DEFAULT '[]', -- products, features, competitors mentioned
+    conversation_topics JSONB DEFAULT '[]',
+    objection_signals JSONB DEFAULT '[]',
+    buying_signals JSONB DEFAULT '[]',
+
+    -- Comprehensive AI analysis
+    ai_analysis JSONB DEFAULT '{}',
+
+    -- Moderation and filtering
+    is_flagged BOOLEAN DEFAULT false,
+    is_deleted BOOLEAN DEFAULT false,
+    moderation_reason VARCHAR(100),
+    toxicity_score DECIMAL(3,2),
+
+    -- Response tracking
+    replied_to_id UUID REFERENCES stream_chat_messages(id),
+    streamer_responded BOOLEAN DEFAULT false,
+
+    sent_at TIMESTAMPTZ DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+
+    CONSTRAINT valid_message_length CHECK (LENGTH(message) > 0 AND LENGTH(message) <= 1000)
+);
+
+-- AI chat suggestions for streamers
+CREATE TABLE ai_chat_suggestions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+    viewer_id UUID REFERENCES stream_viewers(id) ON DELETE CASCADE,
+    message_id UUID REFERENCES stream_chat_messages(id),
+
+    -- Suggestion details
+    suggestion_type VARCHAR(50) NOT NULL, -- 'sales_opportunity', 'objection_handling', 'engagement_boost', 'product_recommendation'
+    suggestion_text TEXT NOT NULL,
+    confidence_score DECIMAL(3,2) NOT NULL,
+    priority_level VARCHAR(20) DEFAULT 'medium' CHECK (priority_level IN ('low', 'medium', 'high', 'urgent')),
+
+    -- AI reasoning and context
+    reasoning TEXT,
+    context_data JSONB DEFAULT '{}',
+    behavioral_triggers JSONB DEFAULT '[]',
+
+    -- Recommended actions
+    recommended_actions JSONB DEFAULT '[]',
+    suggested_response TEXT,
+    suggested_offer TEXT,
+    suggested_registration_link BOOLEAN DEFAULT false,
+
+    -- Streamer interaction
+    is_acted_upon BOOLEAN DEFAULT false,
+    streamer_response TEXT,
+    action_taken VARCHAR(100),
+
+    -- Effectiveness tracking
+    led_to_conversion BOOLEAN DEFAULT false,
+    conversion_value_cents INTEGER,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    acted_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ DEFAULT (NOW() + INTERVAL '5 minutes')
+);
+
+-- =============================================
+-- VIEWER REGISTRATION & CONVERSION SYSTEM
+-- =============================================
+
+-- Stream registrations (no-login required)
+CREATE TABLE stream_registrations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+    viewer_id UUID REFERENCES stream_viewers(id) ON DELETE SET NULL,
+
+    -- Viewer details
+    email VARCHAR(255) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    phone VARCHAR(20),
+    company VARCHAR(255),
+    job_title VARCHAR(255),
+
+    -- Registration context
+    registration_source VARCHAR(50) DEFAULT 'direct', -- direct, ai_suggestion, chat_link, popup
+    registration_trigger VARCHAR(100), -- what caused them to register
+    triggered_by_suggestion_id UUID REFERENCES ai_chat_suggestions(id),
+
+    -- UTM and tracking
+    utm_source VARCHAR(100),
+    utm_medium VARCHAR(100),
+    utm_campaign VARCHAR(100),
+    utm_content VARCHAR(100),
+
+    -- Custom fields defined by streamer
+    custom_fields JSONB DEFAULT '{}',
+
+    -- Status and behavior
+    status VARCHAR(20) DEFAULT 'registered' CHECK (status IN ('registered', 'attended', 'no_show', 'converted', 'unsubscribed')),
+    attended_stream BOOLEAN DEFAULT false,
+    attended_at TIMESTAMPTZ,
+
+    -- Conversion tracking
+    converted BOOLEAN DEFAULT false,
+    conversion_value_cents INTEGER DEFAULT 0,
+    conversion_details JSONB DEFAULT '{}',
+
+    -- Communication preferences
+    email_marketing_consent BOOLEAN DEFAULT false,
+    sms_marketing_consent BOOLEAN DEFAULT false,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Purchase/conversion events during streams
+CREATE TABLE stream_conversions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+    viewer_id UUID REFERENCES stream_viewers(id) ON DELETE SET NULL,
+    registration_id UUID REFERENCES stream_registrations(id) ON DELETE SET NULL,
+
+    -- Conversion details
+    conversion_type VARCHAR(50) NOT NULL, -- 'purchase', 'signup', 'demo_request', 'consultation_booking'
+    product_name VARCHAR(255),
+    product_sku VARCHAR(100),
+    amount_cents INTEGER NOT NULL,
+    currency VARCHAR(3) DEFAULT 'USD',
+    quantity INTEGER DEFAULT 1,
+
+    -- Payment processing
+    stripe_payment_intent_id VARCHAR(100),
+    stripe_customer_id VARCHAR(100),
+    payment_status VARCHAR(20) DEFAULT 'pending' CHECK (payment_status IN ('pending', 'completed', 'failed', 'refunded')),
+    payment_method VARCHAR(50),
+
+    -- Invoicing
+    invoice_number VARCHAR(100),
+    invoice_url TEXT,
+    invoice_sent_at TIMESTAMPTZ,
+
+    -- Conversion attribution
+    conversion_trigger VARCHAR(100), -- 'ai_suggestion', 'manual_offer', 'chat_link', 'call_to_action'
+    ai_suggestion_id UUID REFERENCES ai_chat_suggestions(id),
+    ai_contribution_score DECIMAL(3,2) DEFAULT 0.0,
+
+    -- Customer information for invoice
+    customer_details JSONB NOT NULL, -- {name, email, address, tax_id, etc.}
+
+    -- Fulfillment
+    fulfillment_status VARCHAR(20) DEFAULT 'pending' CHECK (fulfillment_status IN ('pending', 'processing', 'shipped', 'delivered', 'cancelled')),
+    fulfillment_details JSONB DEFAULT '{}',
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    refunded_at TIMESTAMPTZ
+);
+
+-- =============================================
+-- AUTOMATED NOTIFICATION CAMPAIGNS
+-- =============================================
+
+-- Campaign templates with advanced scheduling
+CREATE TABLE notification_campaign_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    streamer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Template details
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    campaign_type VARCHAR(30) DEFAULT 'event_reminder',
+
+    -- Multi-channel templates
+    email_template JSONB, -- {subject, html_content, text_content}
+    sms_template JSONB, -- {content, character_count}
+
+    -- Advanced scheduling (relative to event time)
+    notification_schedule JSONB NOT NULL, -- [{offset_hours: -336, channels: ['email']}, {offset_hours: -24, channels: ['email', 'sms']}]
+    timezone VARCHAR(50) DEFAULT 'UTC',
+
+    -- Personalization and segmentation
+    personalization_fields JSONB DEFAULT '[]',
+    audience_segments JSONB DEFAULT '[]', -- conditions for who receives this
+
+    -- A/B testing
+    ab_test_enabled BOOLEAN DEFAULT false,
+    ab_test_variants JSONB DEFAULT '[]',
+
+    -- Status and usage
+    is_active BOOLEAN DEFAULT true,
+    usage_count INTEGER DEFAULT 0,
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Active campaigns for specific events
+CREATE TABLE notification_campaigns (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id UUID REFERENCES events(id) ON DELETE CASCADE,
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+    template_id UUID REFERENCES notification_campaign_templates(id) ON DELETE CASCADE,
+    streamer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Campaign configuration
+    name VARCHAR(255) NOT NULL,
+    target_audience_count INTEGER DEFAULT 0,
+
+    -- Schedule override (if different from template)
+    custom_schedule JSONB,
+    timezone VARCHAR(50),
+
+    -- Status and tracking
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'paused', 'completed', 'cancelled')),
+    total_scheduled INTEGER DEFAULT 0,
+    total_sent INTEGER DEFAULT 0,
+    total_delivered INTEGER DEFAULT 0,
+    total_opened INTEGER DEFAULT 0,
+    total_clicked INTEGER DEFAULT 0,
+
+    -- A/B testing results
+    ab_test_variant JSONB DEFAULT '{}',
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Individual notification sends with comprehensive tracking
+CREATE TABLE notification_sends (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    campaign_id UUID REFERENCES notification_campaigns(id) ON DELETE CASCADE,
+    registration_id UUID REFERENCES stream_registrations(id) ON DELETE CASCADE,
+
+    -- Send details
+    send_type VARCHAR(20) NOT NULL CHECK (send_type IN ('email', 'sms')),
+    recipient_email VARCHAR(255),
+    recipient_phone VARCHAR(20),
+
+    -- Personalized content
+    subject VARCHAR(255),
+    content_text TEXT NOT NULL,
+    content_html TEXT,
+
+    -- Delivery scheduling and status
+    scheduled_for TIMESTAMPTZ NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'delivered', 'failed', 'bounced', 'spam', 'unsubscribed')),
+
+    -- Delivery tracking
+    sent_at TIMESTAMPTZ,
+    delivered_at TIMESTAMPTZ,
+    opened_at TIMESTAMPTZ,
+    clicked_at TIMESTAMPTZ,
+    unsubscribed_at TIMESTAMPTZ,
+
+    -- Provider integration
+    provider VARCHAR(20), -- 'mailgun', 'twilio', 'sendgrid'
+    provider_message_id VARCHAR(255),
+    provider_status VARCHAR(50),
+
+    -- Error handling
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 3,
+    error_message TEXT,
+    next_retry_at TIMESTAMPTZ,
+
+    -- A/B testing
+    ab_variant VARCHAR(50),
+
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- =============================================
+-- BEHAVIORAL ANALYTICS & AI INSIGHTS
+-- =============================================
+
+-- Viewer behavior tracking for AI analysis
+CREATE TABLE viewer_behavior_events (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    viewer_id UUID REFERENCES stream_viewers(id) ON DELETE CASCADE,
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+
+    -- Event details
+    event_type VARCHAR(50) NOT NULL, -- 'page_view', 'scroll', 'click', 'hover', 'message_sent', 'registration_form_viewed', etc.
+    event_data JSONB DEFAULT '{}',
+
+    -- Context
+    page_url TEXT,
+    element_selector VARCHAR(255),
+    timestamp_offset_seconds INTEGER, -- offset from stream start
+
+    -- AI analysis
+    intent_score DECIMAL(3,2),
+    engagement_level VARCHAR(20), -- 'low', 'medium', 'high'
+
+    occurred_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- AI model training data and insights
+CREATE TABLE ai_model_insights (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    stream_id UUID REFERENCES live_streams(id) ON DELETE CASCADE,
+
+    -- Model performance metrics
+    model_version VARCHAR(50),
+    total_predictions INTEGER DEFAULT 0,
+    correct_predictions INTEGER DEFAULT 0,
+    accuracy_rate DECIMAL(4,3),
+
+    -- Conversion insights
+    total_conversions_predicted INTEGER DEFAULT 0,
+    actual_conversions INTEGER DEFAULT 0,
+    conversion_prediction_accuracy DECIMAL(4,3),
+
+    -- Top performing patterns
+    high_conversion_patterns JSONB DEFAULT '[]',
+    behavioral_indicators JSONB DEFAULT '{}',
+    optimal_intervention_timing JSONB DEFAULT '{}',
+
+    -- Recommendations for streamers
+    streamer_insights JSONB DEFAULT '{}',
+    improvement_suggestions JSONB DEFAULT '[]',
+
+    analyzed_at TIMESTAMPTZ DEFAULT NOW(),
+    stream_ended_at TIMESTAMPTZ
+);
+
+-- =============================================
+-- ENHANCED INDEXES FOR PERFORMANCE
+-- =============================================
+
+-- Live streaming indexes
+CREATE INDEX idx_live_streams_streamer_status ON live_streams(streamer_id, status);
+CREATE INDEX idx_live_streams_status_started ON live_streams(status, started_at DESC);
+CREATE INDEX idx_stream_viewers_stream_session ON stream_viewers(stream_id, session_id);
+CREATE INDEX idx_stream_viewers_conversion_score ON stream_viewers(conversion_score DESC) WHERE conversion_score > 0.5;
+CREATE INDEX idx_stream_viewers_joined ON stream_viewers(joined_at DESC);
+
+-- Chat and AI indexes
+CREATE INDEX idx_chat_messages_stream_time ON stream_chat_messages(stream_id, sent_at DESC);
+CREATE INDEX idx_chat_messages_ai_analysis ON stream_chat_messages USING GIN(ai_analysis);
+CREATE INDEX idx_chat_messages_purchase_intent ON stream_chat_messages(purchase_intent_score DESC) WHERE purchase_intent_score > 0.7;
+CREATE INDEX idx_ai_suggestions_stream_confidence ON ai_chat_suggestions(stream_id, confidence_score DESC);
+CREATE INDEX idx_ai_suggestions_pending ON ai_chat_suggestions(created_at DESC) WHERE is_acted_upon = false AND expires_at > NOW();
+
+-- Registration and conversion indexes
+CREATE INDEX idx_stream_registrations_email ON stream_registrations(email);
+CREATE INDEX idx_stream_registrations_stream_status ON stream_registrations(stream_id, status);
+CREATE INDEX idx_stream_conversions_stream_amount ON stream_conversions(stream_id, amount_cents DESC);
+CREATE INDEX idx_stream_conversions_payment_status ON stream_conversions(payment_status, created_at DESC);
+
+-- Notification indexes
+CREATE INDEX idx_notification_sends_scheduled ON notification_sends(scheduled_for) WHERE status = 'pending';
+CREATE INDEX idx_notification_sends_campaign_status ON notification_sends(campaign_id, status);
+CREATE INDEX idx_notification_campaigns_event ON notification_campaigns(event_id, status);
+
+-- Behavioral analytics indexes
+CREATE INDEX idx_behavior_events_viewer_time ON viewer_behavior_events(viewer_id, occurred_at DESC);
+CREATE INDEX idx_behavior_events_stream_type ON viewer_behavior_events(stream_id, event_type);
+
+-- =============================================
+-- ENHANCED ROW LEVEL SECURITY POLICIES
+-- =============================================
+
+-- Enable RLS on new tables
+ALTER TABLE live_streams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stream_viewers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stream_chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_chat_suggestions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stream_registrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stream_conversions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_campaign_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_sends ENABLE ROW LEVEL SECURITY;
+ALTER TABLE viewer_behavior_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_model_insights ENABLE ROW LEVEL SECURITY;
+
+-- Streamers can manage their own streams and data
+CREATE POLICY "Streamers can manage their streams" ON live_streams
+    FOR ALL USING (streamer_id = auth.uid());
+
+CREATE POLICY "Streamers can view their stream analytics" ON stream_viewers
+    FOR SELECT USING (
+        stream_id IN (SELECT id FROM live_streams WHERE streamer_id = auth.uid())
+    );
+
+CREATE POLICY "Streamers can manage their chat" ON stream_chat_messages
+    FOR ALL USING (
+        stream_id IN (SELECT id FROM live_streams WHERE streamer_id = auth.uid())
+    );
+
+CREATE POLICY "Streamers can view AI suggestions" ON ai_chat_suggestions
+    FOR ALL USING (
+        stream_id IN (SELECT id FROM live_streams WHERE streamer_id = auth.uid())
+    );
+
+-- Public viewing policies for anonymous viewers
+CREATE POLICY "Anyone can view public streams" ON live_streams
+    FOR SELECT USING (is_public = true AND status = 'live');
+
+CREATE POLICY "Viewers can access public stream chat" ON stream_chat_messages
+    FOR SELECT USING (
+        stream_id IN (SELECT id FROM live_streams WHERE is_public = true AND status = 'live')
+    );
+
+-- =============================================
+-- ADVANCED FUNCTIONS FOR STREAMING OPERATIONS
+-- =============================================
+
+-- Function to update viewer duration and behavior metrics
+CREATE OR REPLACE FUNCTION update_viewer_metrics()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Update duration when viewer leaves
+    IF NEW.left_at IS NOT NULL AND OLD.left_at IS NULL THEN
+        NEW.duration_seconds = EXTRACT(EPOCH FROM (NEW.left_at - NEW.joined_at));
+
+        -- Update stream total viewers count
+        UPDATE live_streams
+        SET total_viewers = total_viewers + 1
+        WHERE id = NEW.stream_id;
+    END IF;
+
+    -- Update conversion score based on behavior
+    IF NEW.behavior_signals IS DISTINCT FROM OLD.behavior_signals THEN
+        NEW.conversion_score = calculate_conversion_score(NEW.id);
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_viewer_metrics
+    BEFORE UPDATE ON stream_viewers
+    FOR EACH ROW
+    EXECUTE FUNCTION update_viewer_metrics();
+
+-- Function to calculate advanced conversion score
+CREATE OR REPLACE FUNCTION calculate_conversion_score(p_viewer_id UUID)
+RETURNS DECIMAL AS $$
+DECLARE
+    base_score DECIMAL := 0.0;
+    duration_factor DECIMAL := 0.0;
+    chat_factor DECIMAL := 0.0;
+    behavior_factor DECIMAL := 0.0;
+    ai_factor DECIMAL := 0.0;
+    viewer_record RECORD;
+BEGIN
+    -- Get comprehensive viewer data
+    SELECT
+        duration_seconds,
+        chat_messages_sent,
+        interactions_count,
+        behavior_signals,
+        ai_analysis
+    INTO viewer_record
+    FROM stream_viewers
+    WHERE id = p_viewer_id;
+
+    -- Duration factor (0.0 - 0.3)
+    duration_factor = CASE
+        WHEN viewer_record.duration_seconds > 1800 THEN 0.3  -- 30+ minutes
+        WHEN viewer_record.duration_seconds > 900 THEN 0.2   -- 15+ minutes
+        WHEN viewer_record.duration_seconds > 300 THEN 0.1   -- 5+ minutes
+        ELSE 0.0
+    END;
+
+    -- Chat engagement factor (0.0 - 0.4)
+    SELECT COALESCE(AVG(purchase_intent_score), 0.0) * 0.4
+    INTO chat_factor
+    FROM stream_chat_messages
+    WHERE viewer_id = p_viewer_id AND purchase_intent_score > 0.0;
+
+    -- Behavior signals factor (0.0 - 0.2)
+    behavior_factor = COALESCE(
+        (viewer_record.behavior_signals->>'engagement_score')::DECIMAL * 0.2,
+        0.0
+    );
+
+    -- AI analysis factor (0.0 - 0.1)
+    ai_factor = COALESCE(
+        (viewer_record.ai_analysis->>'conversion_probability')::DECIMAL * 0.1,
+        0.0
+    );
+
+    RETURN LEAST(1.0, duration_factor + chat_factor + behavior_factor + ai_factor);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to process AI chat analysis
+CREATE OR REPLACE FUNCTION process_chat_message_ai()
+RETURNS TRIGGER AS $$
+DECLARE
+    analysis_result JSONB;
+BEGIN
+    -- Mark for AI processing (this would trigger external AI service)
+    -- In production, this would enqueue the message for AI analysis
+    NEW.processed_at = NULL; -- Will be updated when AI processing completes
+
+    -- Immediate basic sentiment analysis (placeholder)
+    IF NEW.message ILIKE '%buy%' OR NEW.message ILIKE '%purchase%' OR NEW.message ILIKE '%price%' THEN
+        NEW.purchase_intent_score = 0.7;
+    ELSIF NEW.message ILIKE '%interested%' OR NEW.message ILIKE '%tell me more%' THEN
+        NEW.purchase_intent_score = 0.5;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_process_chat_ai
+    BEFORE INSERT ON stream_chat_messages
+    FOR EACH ROW
+    EXECUTE FUNCTION process_chat_message_ai();
+
+-- Function to auto-generate AI suggestions
+CREATE OR REPLACE FUNCTION generate_ai_suggestions()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Auto-generate suggestion for high purchase intent messages
+    IF NEW.purchase_intent_score > 0.7 AND NEW.message_type = 'text' THEN
+        INSERT INTO ai_chat_suggestions (
+            stream_id,
+            viewer_id,
+            message_id,
+            suggestion_type,
+            suggestion_text,
+            confidence_score,
+            priority_level,
+            reasoning
+        ) VALUES (
+            NEW.stream_id,
+            NEW.viewer_id,
+            NEW.id,
+            'sales_opportunity',
+            'This viewer is showing strong purchase intent. Consider offering a direct link to purchase or schedule a demo.',
+            NEW.purchase_intent_score,
+            CASE
+                WHEN NEW.purchase_intent_score > 0.8 THEN 'urgent'
+                ELSE 'high'
+            END,
+            'High purchase intent detected in chat message: "' || LEFT(NEW.message, 50) || '..."'
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_generate_ai_suggestions
+    AFTER INSERT OR UPDATE ON stream_chat_messages
+    FOR EACH ROW
+    EXECUTE FUNCTION generate_ai_suggestions();
+
+-- Comments for documentation
+COMMENT ON TABLE live_streams IS 'Real-time streaming sessions with AI-powered features and viewer management';
+COMMENT ON TABLE stream_viewers IS 'Anonymous and identified stream viewers with behavioral analysis and conversion tracking';
+COMMENT ON TABLE stream_chat_messages IS 'Chat messages with comprehensive AI analysis for sales and engagement insights';
+COMMENT ON TABLE ai_chat_suggestions IS 'AI-generated suggestions for streamers to improve conversions and engagement';
+COMMENT ON TABLE stream_registrations IS 'No-login required registrations for stream access with conversion tracking';
+COMMENT ON TABLE stream_conversions IS 'Purchase and conversion events during live streams with full invoicing support';
+COMMENT ON TABLE notification_campaign_templates IS 'Reusable campaign templates with advanced scheduling and personalization';
+COMMENT ON TABLE notification_campaigns IS 'Active notification campaigns with comprehensive tracking and A/B testing';
+COMMENT ON TABLE notification_sends IS 'Individual notification deliveries with detailed engagement tracking';
+COMMENT ON TABLE viewer_behavior_events IS 'Granular viewer behavior tracking for AI analysis and conversion optimization';
+COMMENT ON TABLE ai_model_insights IS 'AI model performance metrics and insights for continuous improvement';
+
 -- Comments for documentation
 COMMENT ON TABLE events IS 'Core events/webinars table with comprehensive features for enterprise webinar platform';
 COMMENT ON TABLE event_registrations IS 'Event registration and attendance tracking with payment support';
