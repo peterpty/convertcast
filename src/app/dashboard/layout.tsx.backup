@@ -1,0 +1,322 @@
+'use client';
+
+import { useAuth } from '@/hooks/useAuth';
+import { redirect } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  Calendar,
+  Users,
+  BarChart3,
+  Settings,
+  Video,
+  LogOut,
+  Plus,
+  Menu,
+  X,
+  Bell,
+  Search,
+  Play
+} from 'lucide-react';
+
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { user, signOut, loading } = useAuth();
+  const pathname = usePathname();
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Check if mobile
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      if (window.innerWidth < 768) {
+        setIsSidebarCollapsed(true);
+      }
+    };
+
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Handle escape key for mobile menu
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    if (isMobileMenuOpen) {
+      document.addEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isMobileMenuOpen]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    redirect('/auth/signin');
+  }
+
+  const sidebarItems = [
+    { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+    { href: '/dashboard/events', label: 'Events', icon: Calendar },
+    { href: '/dashboard/live', label: 'Go Live', icon: Video },
+    { href: '/dashboard/participants', label: 'Participants', icon: Users },
+    { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
+    { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+  ];
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(!isSidebarCollapsed);
+  };
+
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(!isMobileMenuOpen);
+  };
+
+  const isActive = (href: string) => {
+    return pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950">
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {isMobileMenuOpen && isMobile && (
+          <motion.div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 md:hidden"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Top Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-slate-900/80 backdrop-blur-sm border-b border-slate-800/50 z-40">
+        <div className="flex items-center justify-between h-full px-4">
+          <div className="flex items-center space-x-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleMobileMenu}
+              className="text-white hover:bg-slate-800"
+            >
+              <Menu className="w-5 h-5" />
+            </Button>
+            <div className="flex items-center space-x-2">
+              <div className="h-8 w-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                <Play className="h-4 w-4 text-white" />
+              </div>
+              <span className="text-lg font-bold text-white">ConvertCast</span>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button variant="ghost" size="sm" className="text-white hover:bg-slate-800">
+              <Bell className="w-5 h-5" />
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop Sidebar */}
+      <div className="hidden md:block">
+        <div className={`fixed inset-y-0 left-0 z-50 ${isSidebarCollapsed ? 'w-16' : 'w-64'} bg-slate-900/95 backdrop-blur-sm border-r border-slate-800/50 transition-all duration-300`}>
+          <div className="flex flex-col h-full">
+            {/* Logo */}
+            <div className="flex items-center justify-center h-16 px-4 border-b border-slate-800/50">
+              {isSidebarCollapsed ? (
+                <div className="h-8 w-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                  <Play className="h-4 w-4 text-white" />
+                </div>
+              ) : (
+                <div className="flex items-center space-x-2">
+                  <div className="h-8 w-8 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                    <Play className="h-4 w-4 text-white" />
+                  </div>
+                  <span className="text-xl font-bold text-white">ConvertCast</span>
+                </div>
+              )}
+            </div>
+
+            {/* User Info */}
+            {!isSidebarCollapsed && (
+              <div className="flex items-center p-4 border-b border-slate-800/50">
+                <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                  {user.email?.[0]?.toUpperCase()}
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-white">{user.email}</p>
+                  <p className="text-xs text-white/60">Streamer</p>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Action */}
+            {!isSidebarCollapsed && (
+              <div className="p-4 border-b border-slate-800/50">
+                <Link href="/dashboard/events/new">
+                  <Button className="w-full bg-purple-600 hover:bg-purple-700" size="sm">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Event
+                  </Button>
+                </Link>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <nav className="flex-1 py-4">
+              <ul className="space-y-1 px-2">
+                {sidebarItems.map((item) => (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                        isActive(item.href)
+                          ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30'
+                          : 'text-white/70 hover:bg-slate-800/50 hover:text-white'
+                      } ${isSidebarCollapsed ? 'justify-center' : ''}`}
+                      title={isSidebarCollapsed ? item.label : undefined}
+                    >
+                      <item.icon className="w-5 h-5" />
+                      {!isSidebarCollapsed && <span className="ml-3">{item.label}</span>}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            {/* Collapse Toggle */}
+            <div className="p-4 border-t border-slate-800/50">
+              <Button
+                variant="ghost"
+                onClick={toggleSidebar}
+                className={`w-full text-white/70 hover:text-white hover:bg-slate-800/50 ${isSidebarCollapsed ? 'justify-center' : 'justify-start'}`}
+              >
+                <Menu className="w-4 h-4" />
+                {!isSidebarCollapsed && <span className="ml-2">Collapse</span>}
+              </Button>
+            </div>
+
+            {/* Sign Out */}
+            <div className="p-4 border-t border-slate-800/50">
+              <Button
+                variant="ghost"
+                onClick={signOut}
+                className={`w-full text-white/70 hover:text-white hover:bg-slate-800/50 ${isSidebarCollapsed ? 'justify-center' : 'justify-start'}`}
+                title={isSidebarCollapsed ? 'Sign Out' : undefined}
+              >
+                <LogOut className="w-4 h-4" />
+                {!isSidebarCollapsed && <span className="ml-2">Sign Out</span>}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile Sidebar */}
+      <AnimatePresence>
+        {isMobileMenuOpen && isMobile && (
+          <motion.div
+            className="fixed left-0 top-16 h-[calc(100vh-4rem)] z-50 md:hidden w-64"
+            initial={{ x: -300, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -300, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+          >
+            <div className="bg-slate-900/95 backdrop-blur-sm border-r border-slate-800/50 h-full shadow-2xl">
+              <div className="flex flex-col h-full">
+                {/* User Info */}
+                <div className="flex items-center p-4 border-b border-slate-800/50">
+                  <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full flex items-center justify-center text-white font-semibold">
+                    {user.email?.[0]?.toUpperCase()}
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-white">{user.email}</p>
+                    <p className="text-xs text-white/60">Streamer</p>
+                  </div>
+                </div>
+
+                {/* Quick Action */}
+                <div className="p-4 border-b border-slate-800/50">
+                  <Link href="/dashboard/events/new" onClick={() => setIsMobileMenuOpen(false)}>
+                    <Button className="w-full bg-purple-600 hover:bg-purple-700" size="sm">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Event
+                    </Button>
+                  </Link>
+                </div>
+
+                {/* Navigation */}
+                <nav className="flex-1 py-4">
+                  <ul className="space-y-1 px-2">
+                    {sidebarItems.map((item) => (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                            isActive(item.href)
+                              ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30'
+                              : 'text-white/70 hover:bg-slate-800/50 hover:text-white'
+                          }`}
+                        >
+                          <item.icon className="w-5 h-5 mr-3" />
+                          {item.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+
+                {/* Sign Out */}
+                <div className="p-4 border-t border-slate-800/50">
+                  <Button
+                    variant="ghost"
+                    onClick={signOut}
+                    className="w-full justify-start text-white/70 hover:text-white hover:bg-slate-800/50"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign Out
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <div className={`${isMobile ? 'pt-16' : `ml-${isSidebarCollapsed ? '16' : '64'}`} transition-all duration-300`}>
+        <main className="min-h-screen">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
