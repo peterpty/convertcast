@@ -44,7 +44,7 @@ import {
   X,
   LogOut,
   Crown,
-  Sparkles
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -100,6 +100,16 @@ const navigationItems: NavigationItem[] = [
       { title: "Registration", href: "/dashboard/audience/registration", icon: UserPlus },
       { title: "Communication", href: "/dashboard/audience/communication", icon: MessageSquare, isNew: true },
       { title: "Segments", href: "/dashboard/audience/segments", icon: Users, isPro: true },
+    ],
+  },
+  {
+    title: "Streaming",
+    icon: Video,
+    children: [
+      { title: "Live Streams", href: "/dashboard/streaming", icon: Video },
+      { title: "Stream Studio", href: "/dashboard/streaming/studio", icon: Settings, isNew: true },
+      { title: "OBS Setup", href: "/dashboard/streaming/obs-setup", icon: Video },
+      { title: "Analytics", href: "/dashboard/streaming/analytics", icon: BarChart3 },
     ],
   },
   {
@@ -224,7 +234,7 @@ export function DashboardSidebar({ isCollapsed = false, onToggle, className }: D
           asChild
           className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
         >
-          <Link href="/dashboard/events/create">
+          <Link href="/dashboard/events/new">
             <Plus className="h-4 w-4 mr-2" />
             {!isCollapsed && "Create Event"}
           </Link>
