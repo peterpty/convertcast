@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // If there was an error, redirect to sign in page with error
-  const errorUrl = new URL('/auth/signin?error=auth_callback_error', origin);
+  // If there was an error, redirect to login page with error
+  const errorUrl = new URL('/auth/login?error=auth_callback_error', origin);
   return NextResponse.redirect(errorUrl);
 }

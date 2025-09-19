@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -32,10 +32,25 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
+  // Check for auth callback errors
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const error = urlParams.get('error');
+    if (error === 'auth_callback_error') {
+      setErrors({ general: 'Authentication failed. Please try signing in again.' });
+    }
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrors({});
     setIsLoading(true);
+
+    // Set a timeout to prevent infinite loading
+    const timeoutId = setTimeout(() => {
+      setIsLoading(false);
+      setErrors({ general: "Login request timed out. Please try again." });
+    }, 10000); // 10 second timeout
 
     try {
       const { success, error } = await signIn({
@@ -43,15 +58,21 @@ export default function LoginPage() {
         password: formData.password,
       });
 
+      clearTimeout(timeoutId);
+
       if (success) {
-        router.push("/dashboard");
+        // Wait for auth state to update before redirecting
+        setTimeout(() => {
+          router.push("/dashboard");
+        }, 500);
       } else {
         setErrors({ general: error || "Login failed" });
+        setIsLoading(false);
       }
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error("Login error:", error);
       setErrors({ general: "An unexpected error occurred" });
-    } finally {
       setIsLoading(false);
     }
   };

@@ -4,6 +4,9 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { AuthState, SignInData, SignUpData, User as AppUser } from '@/types';
+import { demoAuth, type DemoUser } from '@/lib/demo-auth';
+
+const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
 interface AuthContextType extends AuthState {
   signIn: (data: SignInData) => Promise<{ success: boolean; error?: string }>;
@@ -65,6 +68,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const initializeAuth = async () => {
       try {
+        if (isDemoMode) {
+          const { user } = await demoAuth.getSession();
+          setUser(user);
+          setIsLoading(false);
+          return;
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           const userProfile = await fetchUserProfile(session.user);
@@ -79,38 +89,66 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     initializeAuth();
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
-          const userProfile = await fetchUserProfile(session.user);
-          setUser(userProfile);
-        } else {
-          setUser(null);
-        }
+    if (isDemoMode) {
+      // Demo mode auth state change listener
+      const unsubscribe = demoAuth.onAuthStateChange((user) => {
+        setUser(user);
         setIsLoading(false);
-      }
-    );
+      });
+      return unsubscribe;
+    } else {
+      // Listen for auth state changes
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          if (session?.user) {
+            const userProfile = await fetchUserProfile(session.user);
+            setUser(userProfile);
+          } else {
+            setUser(null);
+          }
+          setIsLoading(false);
+        }
+      );
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
   }, [isHydrated]);
 
   const signIn = async (data: SignInData) => {
     try {
       setIsLoading(true);
-      const { error } = await supabase.auth.signInWithPassword({
+
+      if (isDemoMode) {
+        const result = await demoAuth.signIn(data.email, data.password);
+        if (result.success && result.user) {
+          setUser(result.user);
+          console.log('Demo user signed in successfully:', result.user);
+        }
+        return { success: result.success, error: result.error };
+      }
+
+      const { data: authData, error } = await supabase.auth.signInWithPassword({
         email: data.email,
         password: data.password,
       });
 
       if (error) {
+        console.error('Sign in error:', error);
         return { success: false, error: error.message };
+      }
+
+      if (authData?.user) {
+        // Immediately fetch and set user profile
+        const userProfile = await fetchUserProfile(authData.user);
+        setUser(userProfile);
+        console.log('User signed in successfully:', userProfile);
       }
 
       return { success: true };
     } catch (error) {
+      console.error('Sign in exception:', error);
       return { success: false, error: 'An unexpected error occurred' };
     } finally {
       setIsLoading(false);
@@ -120,6 +158,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (data: SignUpData) => {
     try {
       setIsLoading(true);
+
+      if (isDemoMode) {
+        const result = await demoAuth.signUp(data.email, data.password, data.firstName, data.lastName);
+        return { success: result.success, error: result.error };
+      }
+
       const { error } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
@@ -168,7 +212,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       setIsLoading(true);
-      await supabase.auth.signOut();
+
+      if (isDemoMode) {
+        await demoAuth.signOut();
+        setUser(null);
+      } else {
+        await supabase.auth.signOut();
+      }
     } catch (error) {
       console.error('Error signing out:', error);
     } finally {
